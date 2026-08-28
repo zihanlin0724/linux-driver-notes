@@ -3,6 +3,7 @@
 #include <linux/cdev.h>
 #include <linux/device.h>
 #include <linux/kdev_t.h>
+#include <linux/uaccess.h>
 
 #define DEV_MEM_SIZE 512
 
@@ -32,11 +33,47 @@ loff_t pcd_llseek(struct file *filepointer, loff_t offset, int whenc) {
 }
 
 static ssize_t pcd_read(struct file *filepointer, char __user *buffer, size_t count, loff_t *f_pos) {
-  return 0;
+  printk(KERN_INFO "Read requested for %zu bytes.\n", count);
+  printk(KERN_INFO "Initial file position = %lld.\n", *f_pos);
+
+  if (*f_pos + count > DEV_MEM_SIZE) {
+    count = DEV_MEM_SIZE - *f_pos;
+  }
+
+  if (copy_to_user(buffer, device_buffer + *f_pos, count)) {
+    return -EFAULT;
+  }
+
+  *f_pos += count;
+
+  printk(KERN_INFO "Number of bytes successfully read = %zu bytes.\n", count);
+  printk(KERN_INFO "Updated file position = %lld.\n", *f_pos);
+
+  return count;
 }
 
 static ssize_t pcd_write(struct file *filepointer, const char __user *buffer, size_t count, loff_t *f_pos) {
-  return 0;
+  printk(KERN_INFO "Write requested for %zu bytes.\n", count);
+  printk(KERN_INFO "Initial file position = %lld.\n", *f_pos);
+
+  if (*f_pos + count > DEV_MEM_SIZE) {
+    count = DEV_MEM_SIZE - *f_pos;
+  }
+
+  if(!count) {
+    return -ENOMEM;
+  }
+
+  if (copy_from_user(device_buffer + *f_pos, buffer, count)) {
+    return -EFAULT;
+  }
+
+  *f_pos += count;
+
+  printk(KERN_INFO "Number of bytes successfully written = %zu bytes.\n", count);
+  printk(KERN_INFO "Updated file position = %lld.\n", *f_pos);
+
+  return count;
 }
 
 int pcd_open(struct inode *inode, struct file *filepointer) {
