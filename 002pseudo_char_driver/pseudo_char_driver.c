@@ -28,8 +28,41 @@ dev_t device_number;
 
 struct cdev pcd_cdev;
 
-loff_t pcd_llseek(struct file *filepointer, loff_t offset, int whenc) {
-  return 0;
+loff_t pcd_llseek(struct file *filepointer, loff_t offset, int whence) {
+  loff_t tmp;
+  printk(KERN_INFO "Llseek requested.\n");
+  printk(KERN_INFO "Current value of the file position = %lld.\n", (*filepointer).f_pos);
+
+  switch(whence) {
+    case SEEK_SET:
+      if ((offset > DEV_MEM_SIZE) || (offset < 0)) {
+        return -EINVAL;
+      }
+      (*filepointer).f_pos = offset;
+      break;
+
+    case SEEK_CUR:
+      tmp = (*filepointer).f_pos + offset;
+      if ((tmp > DEV_MEM_SIZE) || (tmp < 0)) {
+        return -EINVAL;
+      }
+      (*filepointer).f_pos = tmp;
+      break;
+
+    case SEEK_END:
+      tmp = DEV_MEM_SIZE + offset;
+      if ((tmp > DEV_MEM_SIZE) || (tmp < 0)) {
+        return -EINVAL;
+      }
+      (*filepointer).f_pos = tmp;
+      break;
+
+    default:
+      return -EINVAL;
+  }
+  printk(KERN_INFO "New value of the file position = %lld.\n", (*filepointer).f_pos);
+
+  return (*filepointer).f_pos;
 }
 
 static ssize_t pcd_read(struct file *filepointer, char __user *buffer, size_t count, loff_t *f_pos) {
@@ -77,10 +110,12 @@ static ssize_t pcd_write(struct file *filepointer, const char __user *buffer, si
 }
 
 int pcd_open(struct inode *inode, struct file *filepointer) {
+  printk(KERN_INFO "Open was successful");
   return 0;
 }
 
 int pcd_release(struct inode *inode, struct file *filepointer) {
+  printk(KERN_INFO "Release was successful");
   return 0;
 }
 
@@ -101,13 +136,48 @@ struct device *device_pcd;
 static int __init pcd_driver_init(void) {
   int ret;
   ret = alloc_chrdev_region(&device_number, 0, 1, "pcd_device");
+  if(ret < 0) {
+    printk(KERN_INFO "Alloc chrdev fail!!!\n");
+    goto out;
+  }
+
   cdev_init(&pcd_cdev, &pcd_fops);
   pcd_cdev.owner = THIS_MODULE;
-  cdev_add(&pcd_cdev, device_number, 1);
+  ret = cdev_add(&pcd_cdev, device_number, 1);
+  if(ret < 0) {
+    printk(KERN_INFO "Cdev add fail!!!\n");
+    goto unreg_chrdev;
+  }
+
   class_pcd = class_create("pcd_class");
+  if (IS_ERR(class_pcd)) {
+    printk(KERN_INFO "Class creation fail!!!\n");
+    ret = PTR_ERR(class_pcd);
+    goto cdev_del;
+  }
+
   device_pcd = device_create(class_pcd, NULL, device_number, NULL, "pcd");
+  if (IS_ERR(device_pcd)) {
+    printk(KERN_INFO "Device creation fail!!!\n");
+    ret = PTR_ERR(device_pcd);
+    goto class_del;
+  }
+
   printk(KERN_INFO "Module init was successful.\n");
   return 0;
+
+class_del:
+  class_destroy(class_pcd);
+
+cdev_del:
+  cdev_del(&pcd_cdev);
+
+unreg_chrdev:
+  unregister_chrdev_region(device_number, 1);
+
+out:
+  printk(KERN_INFO "Module insertion fail.\n");
+  return ret;
 }
 
 static void __exit pcd_driver_cleanup(void) {
